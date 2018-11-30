@@ -1,0 +1,88 @@
+---
+title: "Factor Analysis, PCA, and Linear Discriminant Analysis"
+output: html_notebook
+---
+
+
+In this notebook we investigate the relationship between different demographics, and create a model that predicts the political affiliation of zip codes in Louisiana (Republican vs. Democrat). 
+
+The statistical methods that we will be using are:
+
+- Principal Components Analysis (PCA)
+- Factor Analysis (FA)
+- Linear Discriminant Analysis (LDA)
+
+
+We begin the analysis by investigating the dataset at a high level, and then move to the main analysis. 
+
+```{r}
+# import libraries#
+
+library(MASS) # LDA
+library(psych) # FA
+library(knitr)# create tables
+library(corrplot)
+
+# set working directory #
+setwd('C:/Users/hake9512/Documents/ArcGIS/Projects/VoteClassifier/R-Scripts/')
+```
+
+
+```{r}
+# IMPORT DATA #
+
+# Per capita clean dataset #
+vote_df <- read.csv('percapita_clean.csv', header = T, sep = ',')
+
+
+head(vote_df, 10)
+```
+
+
+The data loaded successfully, although we can now isolate our relevant variables from the rest of the dataset. We do not need attributes such as the zip code, postal code name, etc.
+
+
+```{r}
+names(vote_df)
+
+vote_data <- vote_df[,-c(1:11, 26, 27, 28, 30:35)] # remove unnecessary columns
+
+names(vote_data)
+
+target <- vote_df$Republican
+
+# Create TRAIN and TEST data for LDA #
+
+indx <- sample(nrow(vote_df), 40) # Uses 1/10th of data for K-Fold Cross Validation
+train_data <- vote_df[indx,]
+test_data <- vote_df[-indx,]
+
+# # # # # # # #
+```
+
+We now have a dataset that we can use to check for correlations. In Principal Components Analysis, we seek correlated variables in our dataset
+
+```{r}
+# PRELIMINARY ANALYSIS #
+corrplot.mixed(cor(vote_data))
+kable(cor(vote_data))  # correlation between variables
+```
+
+Our variables are highly correlated. We conduct PCA as a preliminary analysis for Factor Analysis. After using eigen decomposition to create our factor scores and factor loadings, we check the skree plot to visualize the proportion of variance explained by each component.
+
+```{r}
+vote.pca <- princomp(~., data = vote_data, cor = TRUE)
+plot(vote.pca, type ='l', pch = 19)
+```
+
+It appears that the first two components explain 85.80% of variance in the dataset, while the first three components explain 96.51% of the variance. We will visualize our component scores in a table.
+
+```{r}
+plot(x = vote.pca$scores[,1], y = vote.pca$scores[,2]) # plot factor scores
+plot(vote.pca$loadings[,1:2])
+
+```
+
+
+
+
