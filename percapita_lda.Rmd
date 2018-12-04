@@ -1,0 +1,393 @@
+---
+title: "Factor Analysis, PCA, and Linear Discriminant Analysis"
+output:
+  pdf_document: default
+  html_notebook: default
+---
+
+
+```{r}
+# import libraries#
+
+library(MASS) # LDA
+library(psych) # FA
+library(knitr)# create tables
+library(corrplot)
+library(kableExtra)
+
+# set working directory #
+# setwd('C:/Users/hake9512/Documents/ArcGIS/Projects/VoteClassifier/R-Scripts/')
+setwd('~/psychographic-segmentation/vote-classifier/')
+```
+
+```{r}
+# IMPORT DATA #
+
+# Per capita clean dataset #
+vote_df <- read.csv('percapita_clean.csv', header = T, sep = ',')
+
+
+#head(vote_df, 10)
+```
+
+In this notebook we investigate the relationship between different demographics, and create a model that predicts the political affiliation of zip codes in Louisiana (Republican vs. Democrat). 
+
+The statistical methods that we will be using are:
+
+- Principal Components Analysis (PCA)
+- Factor Analysis (FA)
+- Linear Discriminant Analysis (LDA)
+
+
+The data that we are using is as follows:
+
+
+
+```{r}
+names(vote_df)
+```
+
+Demographic Variables:
+Number of people that bought cars in the past twelve months
+Number of people that identify as democrat
+Number of people that identify as Republican
+Median Disposable Income
+Median Household Income
+Number of people in a religious club
+Number of Males
+Number of Females
+Number of people that spent on children's toys
+Number of people with a Bachelor's degree
+Number of People that spend money at bars
+Number of married people
+Annual Food Spend Per Capita
+Annual Healthcare Spend Per Capita
+
+Target Variable:
+Political Affiliation
+
+Spatial Variables:
+Apportionment Confidence Score (reliability of the data enrichment tool)
+Shape area
+Shape length
+
+
+We begin the analysis by investigating the dataset at a high level, and then move to the main analysis. 
+
+
+
+The data loaded successfully, although we can now isolate our relevant variables from the rest of the dataset. We do not need attributes such as the zip code, postal code name, etc.
+
+
+```{r}
+names(vote_df)
+
+vote_data <- vote_df[,-c(1:11, 26, 27, 28, 30:35)] # remove unnecessary columns for PCA and EFA
+
+names(vote_data)
+
+target <- vote_df$Republican
+
+# Create TRAIN and TEST data for LDA #
+
+indx <- sample(nrow(vote_df), 40) # Uses 1/10th of data for K-Fold Cross Validation
+
+test_data <- vote_df[indx,]
+train_data <- vote_df[-indx,]
+
+# # # # # # # #
+```
+
+We now have a dataset that we can use to check for correlations. In Principal Components Analysis, we seek correlated variables in our dataset.
+
+
+
+```{r}
+# Extract variance #
+kable(sort(diag(cov(vote_data)), decreasing = TRUE))
+```
+
+The variance for each variable differ by a large magnitude, suggesting that an unstandardized PCA will lead to skewed results. Next, we check the correlation between variables to justify dimensionality reduction.
+
+```{r}
+# PRELIMINARY ANALYSIS #
+corrplot.mixed(cor(vote_data))
+```
+
+Our variables are highly correlated. We conduct PCA as a preliminary analysis for Factor Analysis. After using eigen decomposition to create our factor scores and factor loadings, we check the skree plot to visualize the proportion of variance explained by each component.
+
+## Principal Components
+
+```{r}
+vote.pca <- princomp(~., data = vote_data, cor = TRUE) # PCA WITH CORRELATION MATRIX
+vote.pca.cov <- princomp(~., data = vote_data, cor = FALSE) # PCA WITH COVARIANCE MATRIX
+
+plot(vote.pca, type ='l', pch = 19, main = 'PVE, Louisiana Demographics (R Matrix)')
+
+plot(vote.pca.cov, type ='l', pch = 19, main = 'PVE, Louisiana Demographics (S Matrix)')
+```
+
+```{r}
+names(summary(vote.pca))
+summary(vote.pca)
+summary(vote.pca.cov)
+```
+
+It appears that the first two components in our PCA using the correlation matrix explain 85.80% of variance in the dataset, while the first three components explain 96.51% of the variance. We will visualize our component scores in a table.
+
+Next, we wish to visualize our factor loadings and factor scores to 
+
+```{r}
+plot(x = vote.pca$scores[,1], y = vote.pca$scores[,2], main = 'Prinicipal Component Scores') # plot factor scores
+plot(x = vote.pca$scores[,1], y = vote.pca$scores[,3], main = 'Priniciapl Component Scores')
+plot(x = vote.pca$scores[,2], y = vote.pca$scores[,3], main = 'Priniciapl Component Scores')
+
+
+plot(x = vote.pca.cov$scores[,1], y = vote.pca.cov$scores[,2], main = 'PC Scores, S-Matrix PCA')
+plot(vote.pca.cov$loadings[,1:2], type = 'n', main = 'Loadings Plot for S-Matrix PCA')
+text(vote.pca.cov$loadings[,1:2], names(vote_data)) 
+
+
+### LOADINGS PLOT, R-MATRIX ####
+plot(vote.pca$loadings[,1:2], type = 'n', main = 'Loadings Plot for R-Matrix PCA')
+text(vote.pca$loadings[,1:2], names(vote_data)) 
+
+
+## LOADINGS FOR UP TO 3 COMPONENTS
+plot(vote.pca$loadings[,c(1,3)], type = 'n', main = 'Loadings Plot for R-Matrix PCA')
+text(vote.pca$loadings[,c(1,3)], names(vote_data)) 
+
+plot(vote.pca$loadings[,c(2,3)], type = 'n', main = 'Loadings Plot for R-Matrix PCA')
+text(vote.pca$loadings[,c(2,3)], names(vote_data)) 
+```
+
+```{r}
+# 
+biplot(vote.pca, scale = 0, main = 'R-Matrix PCA Biplot')
+biplot(vote.pca.cov)
+```
+
+
+Here, we see that R-Matrix PCA separates the demographics in these zip codes into three clusters. The first one includes the health insurance spend per capita and food spend per capita. The second cluster includes the disposable income and median household income of the zip code, while the third cluster is number of people with bachelors degrees, republican / democratic affiliation, married households, and other social demographics. We can take the scores of each zip code and map them to visualize how each zip code fares.
+
+We note that observation 269 is an outlier; this observation corresponds with zipcode 70534 (Estherwood, Louisiana, near Lafayette). This may be because it has a negative value for health insurance and food spend.
+
+Finally, we evaluate the 
+
+
+```{r}
+qqnorm(vote.pca$scores[,1], pch = 19, main = 'Louisiana PCA Q-Q Plot')
+```
+
+```{r}
+vote.pca$scores
+```
+
+It appears that our data is not quite normally distributed.
+
+
+## Factor Analysis of Louisiana Postal Code Demographics
+
+While Principal Components Analysis is useful in taking an initial look at our data, we continue our analysis using Factor Analysis to increase the level of granularity.
+
+Factor analysis describes the covariance relationships among many variables in terms of a few unobservable random quantities (latent variables).
+
+Here, we approximate the covariance matrix using something beyond an eigen decomposition. 
+
+We seek to answer the question: are the data consistent with a prescribed, underlying structure?
+
+We have a model for our original data matrix $X$ based on the assumption that the matrix is linearly dependent on a few unobservable random variables (factors). So we seek to find our $L$ matrix (factor loadings). 
+
+We assume:
+Observations are independent, that the residual terms and F are independent, and that we have constant variance.
+
+The purpose of this factor analysis is to see if there is an underlying prescribed structure.\
+
+We will conduct a factor analysis using the correlation matrix, calculated using the maximum likelihood estimation. We conduct an analysis without rotation, and one with rotation to interpret the results.
+
+```{r}
+vote.fa <- fa(vote_data, nfactors = 3, n.obs = 416, covar = FALSE, fm ='ml', rotate = "none", 
+              scores = "regression")
+vote.fa.rotate <- fa(vote_data, nfactors = 2, n.obs = 416, covar = FALSE, fm = 'ml', rotate = 'varimax', 
+              scores = 'regression')
+
+vote.fa.rotate
+# Check Factors#
+
+vote.fa$loadings
+vote.fa.rotate$loadings
+vote.fa.rotate$rotation
+
+
+print(vote.fa.rotate, digits = 2, cutoff = 0.3, sort = TRUE)
+vote.fa.rotate
+
+ev <- eigen(cor(vote_data)) # Extract eigenvalues to determine the number of factors in our model
+
+ev$values # check eigenvalues
+plot(ev$values, type = 'b', pch = 19, ylab = 'Eigenvalues', xlab = 'Lambda', main = 'Eigenvalues of Correlation Matrix') # plot eigenvalues
+
+sort(vote.fa.rotate$uniquenesses, decreasing = TRUE)
+```
+
+** Why 2 factors? **
+
+Three factors were used in an initial analysis. However, they explained 89% of the variance, while two explain 84% of the variance. In addition, median household income and median disposable income have high uniqueness in both our 2 and 3-factor analyses. Every other variable is loaded on two factors, and we obtain a simple structure.
+
+
+Two factors explain 84% of the variance of our data. Our first factor explains 65%, then 13%, and then 11%. The rate of change in variance explained between factors is decreasing, so we can include two or three factors. We decide on three factors by checking the eigenvalues of our data's correlation matrix. Here, our eigenvalue is greater than 1 up to the third eigenvalue.
+
+Sum of square loadings for each factor are all still greater than 1, which also suggests that three factors are sufficient.
+
+
+** Adequacy of our model **
+
+```{r}
+# Create Residual Matrix
+
+vote.load <- vote.fa.rotate$loadings[,1:2] # save loading matrix for speed FA
+vote.psi <- vote.fa.rotate$uniq # save uniqueness vector for speed FA
+vote.sigma <- vote.load %*% t(vote.load) + diag(vote.psi) # save estimated covariance matrix
+R <- cor(vote_data) # save covariance matrix to create residual matrix
+
+k. <- kable(round(R - vote.sigma, 3)) %>%
+  kable_styling(full_width = F)
+add_header_above(k., c("Record Times Covariance Residual Matrix" = 16), bold = TRUE)
+
+round(tr(R - vote.sigma),2) # check the trace; should be close to zero
+```
+
+The diagonals are zero, and the rest of the entries in the residual matrix are close to zero. 
+
+** Uniqueness and Communality **
+
+We notice that the uniqueness of our variables are quite low, except for disposable income and median household income. Since our values of uniqueness for these two variables are near 1, it means that they aren't explained well by any of the latent factors constructed in this analysis.
+
+** Loading Vectors (L) **
+
+```{r}
+k. <- kable(vote.fa.rotate$loadings[,1:2]) %>%
+  kable_styling(full_width = F)
+add_header_above(k., c("Factor Loadings Using R Matrix" = 3), bold = TRUE)
+```
+
+Our loading vectors show the correlation of variables with each underlying factor. Our first factor is loaded by variables such as social demographics, while the second factor is loaded by food and healthcare expenditures per capita, and the third factor is loaded by a mix of both, includig median household income and disposable income. This may be a general lifestyle factor that describes the prosperity of a zip code. What is peculiar, is that republican affiliation is loaded on this factor, but democrat is not.
+
+
+** Factor Scores: Diagnostic and Outliers **
+
+```{r}
+plot(vote.fa.rotate$scores, main = 'Factor Plot for R')
+plot(vote.fa.rotate$loadings[,1:2], main = 'Factor Loadings')
+text(vote.fa.rotate$loadings[,1:2], names(vote_data))
+biplot(vote.fa.rotate)
+```
+
+Visualizing our results, we see that most zip codes fall near the origin, meaning that they score moderately. The factor loadings separate the variables distinctly, and our two ambiguous variables map in between both. An interesting observation we make by looking at the biplot is that most of our zip codes score low on both factors.
+
+Finally, we map our results to visualize them spatially.
+
+We do this by:
+
+1. Create dataframe with the original features and their factor scores.
+2. Export to CSV
+3. Upload to ArcGIS and visualize.
+
+```{r}
+vote.fa.rotate$scores # factor scores for rotated factor analysis
+
+vote_df$fac1 <- vote.fa.rotate$scores[,1]
+vote_df$fac2 <- vote.fa.rotate$scores[,2]
+
+```
+
+
+```{r}
+write.csv(vote_df, 'vote_fa.csv')
+```
+
+## Linear Discriminant Analysis
+
+We explored our dataset in the previous analysis and found that they can be described by two latent variables. The first factor describes the qualitative variables, such as marriage status, number of people with a bachelors degree, number of males and females, etc. The other factor describes quantitative variables, such as median household income and disposable income. We explore how these variables influence the political affiliation of each zip code. 
+
+
+We want to visualize our results (how the classifier classified each zip code).
+```{r}
+## OMIT COLUMNS ##
+
+#names(train_data)
+train_data <- train_data[,-c(1:11, 15, 16, 26:34)]
+test_data <- test_data[, -c(1:11, 15, 16, 26:34)]
+```
+
+
+```{r}
+names(train_data)
+```
+
+```{r}
+vote.lda <- lda(Republican~., data = train_data)
+
+vote.lda
+```
+
+We were able to reduce our data to a single linear discriminant. Let's plot it to see how the data is distributed on it.
+
+
+```{r}
+plot(vote.lda)
+
+plot( p1, col=rgb(0,0,1,1/4), xlim=c(0,10))  # first histogram
+plot( p2, col=rgb(1,0,0,1/4), xlim=c(0,10), add=T)  # second
+```
+It appears that there is some overlap in our democrat and republican groups. Let's predict the target variable, Republican, using LDA.
+
+We see in the plot that when $LD_1 > 0$, the probability that a zip code is predominantly republican increases,, and when $LD_1 < 0$, the probability that a zip code is republican decreases.
+
+```{r}
+train.pred <- predict(vote.lda, data = train_data)
+
+
+republican.train <-  data.frame(train_data, pred = train.pred$class)
+republican.train
+```
+
+```{r}
+res_tab = table(republican.train$Republican, republican.train$pred)
+res_tab
+
+# Count the number of misclassifications #
+misclass = sum(res_tab[2], res_tab[3])
+
+# Calculate the AER #
+aer = misclass / nrow(train_data)
+aer
+```
+
+There is a 23.4% misclassification rate (AER) for our linear classifier. Next, we test the classifier on data that it hasn't seen before.
+
+```{r}
+test.pred <- predict(vote.lda, newdata = test_data)
+
+rep.test <- data.frame(test_data, test.pred$class)
+
+restab.test <- table(rep.test$Republican, rep.test$test.pred.class)
+
+restab.test
+
+4misclass2 <- sum(restab.test[2], restab.test[3])
+  
+aer <- misclass2 / nrow(test_data)
+aer
+
+accur <- sum(restab.test[1], restab.test[4])
+
+ac_perf <- accur / nrow(test_data)
+ac_perf
+
+# Null accuracy
+
+1 - mean(test_data$Republican) # our classifier's null error rate
+```
+
+The LDA classifier has an accuracy rate of 70%. 
